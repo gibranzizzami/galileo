@@ -77,6 +77,7 @@ int main() {
     system("sudo sed -i 's/^#LoadModule rewrite_module/LoadModule rewrite_module/' /etc/httpd/conf/httpd.conf");
     system("sudo sed -i 's/AllowOverride None/AllowOverride All/' /etc/httpd/conf/httpd.conf");
     system("sudo sed -i 's/DirectoryIndex index.html/DirectoryIndex index.php index.html index.htm/' /etc/httpd/conf/httpd.conf");
+    system("sudo sed -i 's|DocumentRoot "/srv/http"|DocumentRoot "/srv/http/slims"|' /etc/httpd/conf/httpd.conf");
 
     system(R"(sudo tee -a /etc/httpd/conf/httpd.conf > /dev/null <<'EOF'
 
