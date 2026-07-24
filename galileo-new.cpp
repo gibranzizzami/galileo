@@ -41,22 +41,54 @@ int main() {
     system("sudo pacman -S php php-fpm php-gd --noconfirm");
 
     cout << "Installing MariaDB..." << endl;
+
     system("sudo pacman -S mariadb --noconfirm");
     system("sudo mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql");
     system("sudo systemctl enable mariadb");
+
+    bool inChroot = (access("/run/systemd/system", F_OK) != 0);
+
+    if (inChroot) {
+            cout << "Running inside chroot, starting MariaDB manually..." << endl;
+
+    system("sudo mkdir -p /run/mysqld");
+    system("sudo chown mysql:mysql /run/mysqld");
+
+    system("sudo /usr/bin/mariadbd "
+           "--user=mysql "
+           "--datadir=/var/lib/mysql "
+           "--socket=/run/mysqld/mysqld.sock "
+           "--pid-file=/run/mysqld/mysqld.pid "
+           "--skip-networking &");
+
+    system("sleep 5");
+} else {
     system("sudo systemctl start mariadb");
+    system("sleep 3");
+}
 
-    cout << "Creating database and user..." << endl;
+cout << "Creating database and user..." << endl;
 
-    string createDB = "sudo mysql -u root -e \"CREATE DATABASE IF NOT EXISTS " + dbName + ";\"";
-    string createUser = "sudo mysql -u root -e \"CREATE USER IF NOT EXISTS '" + dbUser + "'@'localhost' IDENTIFIED BY '" + dbPass + "';\"";
-    string grantPriv = "sudo mysql -u root -e \"GRANT ALL PRIVILEGES ON " + dbName + ".* TO '" + dbUser + "'@'localhost';\"";
+string createDB =
+    "sudo mariadb -u root -e \"CREATE DATABASE IF NOT EXISTS `" + dbName + "`;\"";
 
-    system(createDB.c_str());
-    system(createUser.c_str());
-    system(grantPriv.c_str());
-    system("sudo mysql -u root -e \"FLUSH PRIVILEGES;\"");
+string createUser =
+    "sudo mariadb -u root -e \"CREATE USER IF NOT EXISTS '" + dbUser +
+    "'@'localhost' IDENTIFIED BY '" + dbPass + "';\"";
 
+string grantPriv =
+    "sudo mariadb -u root -e \"GRANT ALL PRIVILEGES ON `" + dbName +
+    "`.* TO '" + dbUser + "'@'localhost';\"";
+
+system(createDB.c_str());
+system(createUser.c_str());
+system(grantPriv.c_str());
+system("sudo mariadb -u root -e \"FLUSH PRIVILEGES;\"");
+
+if (inChroot) {
+    system("sudo pkill mariadbd");
+}
+    
     cout << "\nDownload SLiMS now? (yes/no): ";
     cin >> confirm;
 
