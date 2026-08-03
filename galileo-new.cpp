@@ -1,8 +1,29 @@
 #include <iostream>
 #include <cstdlib>
 #include <string>
+#include <termios.h>
+#include <unistd.h>
 
 using namespace std;
+
+// Function to read password without displaying it
+string getHiddenPassword() {
+    string password;
+
+    termios oldt, newt;
+    tcgetattr(STDIN_FILENO, &oldt);
+
+    newt = oldt;
+    newt.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+
+    getline(cin, password);
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+    cout << endl;
+
+    return password;
+}
 
 int main() {
     string confirm;
@@ -27,8 +48,10 @@ int main() {
     cin >> dbUser;
     if (dbUser.empty()) dbUser = "slims_user";
 
+    cin.ignore();
+
     cout << "Enter database password: ";
-    cin >> dbPass;
+    dbPass = getHiddenPassword();
 
     cout << "\nStarting installation...\n" << endl;
 
@@ -41,54 +64,22 @@ int main() {
     system("sudo pacman -S php php-fpm php-gd --noconfirm");
 
     cout << "Installing MariaDB..." << endl;
-
     system("sudo pacman -S mariadb --noconfirm");
     system("sudo mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql");
     system("sudo systemctl enable mariadb");
-
-    bool inChroot = (access("/run/systemd/system", F_OK) != 0);
-
-    if (inChroot) {
-            cout << "Running inside chroot, starting MariaDB manually..." << endl;
-
-    system("sudo mkdir -p /run/mysqld");
-    system("sudo chown mysql:mysql /run/mysqld");
-
-    system("sudo /usr/bin/mariadbd "
-           "--user=mysql "
-           "--datadir=/var/lib/mysql "
-           "--socket=/run/mysqld/mysqld.sock "
-           "--pid-file=/run/mysqld/mysqld.pid "
-           "--skip-networking &");
-
-    system("sleep 5");
-} else {
     system("sudo systemctl start mariadb");
-    system("sleep 3");
-}
 
-cout << "Creating database and user..." << endl;
+    cout << "Creating database and user..." << endl;
 
-string createDB =
-    "sudo mariadb -u root -e \"CREATE DATABASE IF NOT EXISTS `" + dbName + "`;\"";
+    string createDB = "sudo mysql -u root -e \"CREATE DATABASE IF NOT EXISTS " + dbName + ";\"";
+    string createUser = "sudo mysql -u root -e \"CREATE USER IF NOT EXISTS '" + dbUser + "'@'localhost' IDENTIFIED BY '" + dbPass + "';\"";
+    string grantPriv = "sudo mysql -u root -e \"GRANT ALL PRIVILEGES ON " + dbName + ".* TO '" + dbUser + "'@'localhost';\"";
 
-string createUser =
-    "sudo mariadb -u root -e \"CREATE USER IF NOT EXISTS '" + dbUser +
-    "'@'localhost' IDENTIFIED BY '" + dbPass + "';\"";
+    system(createDB.c_str());
+    system(createUser.c_str());
+    system(grantPriv.c_str());
+    system("sudo mysql -u root -e \"FLUSH PRIVILEGES;\"");
 
-string grantPriv =
-    "sudo mariadb -u root -e \"GRANT ALL PRIVILEGES ON `" + dbName +
-    "`.* TO '" + dbUser + "'@'localhost';\"";
-
-system(createDB.c_str());
-system(createUser.c_str());
-system(grantPriv.c_str());
-system("sudo mariadb -u root -e \"FLUSH PRIVILEGES;\"");
-
-if (inChroot) {
-    system("sudo pkill mariadbd");
-}
-    
     cout << "\nDownload SLiMS now? (yes/no): ";
     cin >> confirm;
 
@@ -109,7 +100,7 @@ if (inChroot) {
     system("sudo sed -i 's/^#LoadModule rewrite_module/LoadModule rewrite_module/' /etc/httpd/conf/httpd.conf");
     system("sudo sed -i 's/AllowOverride None/AllowOverride All/' /etc/httpd/conf/httpd.conf");
     system("sudo sed -i 's/DirectoryIndex index.html/DirectoryIndex index.php index.html index.htm/' /etc/httpd/conf/httpd.conf");
-    system("sudo sed -i 's|DocumentRoot "/srv/http"|DocumentRoot "/srv/http/slims"|' /etc/httpd/conf/httpd.conf");
+    system("sudo sed -i 's|DocumentRoot \"/srv/http\"|DocumentRoot \"/srv/http/slims\"|' /etc/httpd/conf/httpd.conf");
 
     system(R"(sudo tee -a /etc/httpd/conf/httpd.conf > /dev/null <<'EOF'
 
