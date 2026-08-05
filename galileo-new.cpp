@@ -64,21 +64,34 @@ int main() {
     system("sudo pacman -S php php-fpm php-gd --noconfirm");
 
     cout << "Installing MariaDB..." << endl;
-    system("sudo pacman -S mariadb --noconfirm");
-    system("sudo mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql");
-    system("sudo systemctl enable mariadb");
-    system("sudo systemctl start mariadb");
+    system(R"(arch-chroot /mnt /bin/bash <<'EOF'
 
-    cout << "Creating database and user..." << endl;
+if [ ! -d /var/lib/mysql/mysql ]; then
+    mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql
+fi
 
-    string createDB = "sudo mysql -u root -e \"CREATE DATABASE IF NOT EXISTS " + dbName + ";\"";
-    string createUser = "sudo mysql -u root -e \"CREATE USER IF NOT EXISTS '" + dbUser + "'@'localhost' IDENTIFIED BY '" + dbPass + "';\"";
-    string grantPriv = "sudo mysql -u root -e \"GRANT ALL PRIVILEGES ON " + dbName + ".* TO '" + dbUser + "'@'localhost';\"";
+mkdir -p /run/mysqld
+chown mysql:mysql /run/mysqld
+/usr/bin/mariadbd --user=mysql --skip-networking --socket=/run/mysqld/mysqld.sock >/tmp/mariadb.log 2>&1 &
+PID=$!
 
-    system(createDB.c_str());
-    system(createUser.c_str());
-    system(grantPriv.c_str());
-    system("sudo mysql -u root -e \"FLUSH PRIVILEGES;\"");
+until mariadb-admin --socket=/run/mysqld/mysqld.sock ping --silent
+do
+    sleep 1
+done
+
+mariadb --socket=/run/mysqld/mysqld.sock <<SQL
+
+CREATE DATABASE IF NOT EXISTS resourcespace CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'resourcespace'@'localhost' IDENTIFIED BY 'password123';
+GRANT ALL PRIVILEGES ON resourcespace.* TO 'resourcespace'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+
+kill $PID || true
+systemctl enable mariadb
+EOF
+)");
 
     cout << "\nDownload SLiMS now? (yes/no): ";
     cin >> confirm;
